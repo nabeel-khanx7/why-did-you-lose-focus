@@ -2,6 +2,8 @@ from streamlit_autorefresh import st_autorefresh
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+from focus_reason import detect_focus_reasons
+
 
 # ============================================================
 # CONFIG
@@ -12,7 +14,12 @@ st.set_page_config(
     page_icon="🎯",
     layout="wide"
 )
-st_autorefresh(interval=5000, key="focus_dashboard_refresh")
+
+# Refresh dashboard every 5 seconds
+st_autorefresh(
+    interval=5000,
+    key="focus_dashboard_refresh"
+)
 
 DATA_FILE = Path("data/activity_log.csv")
 
@@ -60,6 +67,10 @@ st.title("🎯 Why Did You Lose Focus?")
 st.caption("AI-powered Focus & Productivity Analytics")
 
 
+# ============================================================
+# NO DATA CHECK
+# ============================================================
+
 if df.empty:
 
     st.warning(
@@ -82,7 +93,11 @@ total_idle = df["idle_seconds"].sum()
 
 average_idle = df["idle_seconds"].mean()
 
-# Number of application switches
+
+# ============================================================
+# APPLICATION SWITCHES
+# ============================================================
+
 app_switches = (
     df["active_app"]
     .ne(df["active_app"].shift())
@@ -121,9 +136,13 @@ def is_distraction(app):
     )
 
 
-df["distraction"] = df["active_app"].apply(is_distraction)
+df["distraction"] = df["active_app"].apply(
+    is_distraction
+)
 
-distraction_records = int(df["distraction"].sum())
+distraction_records = int(
+    df["distraction"].sum()
+)
 
 
 # ============================================================
@@ -133,19 +152,31 @@ distraction_records = int(df["distraction"].sum())
 score = 100
 
 # Application switching penalty
-switch_penalty = min(app_switches * 1.5, 30)
+switch_penalty = min(
+    app_switches * 1.5,
+    30
+)
 
 # Idle penalty
-idle_penalty = min(total_idle / 30, 30)
+idle_penalty = min(
+    total_idle / 30,
+    30
+)
 
 # Distraction penalty
-distraction_penalty = min(distraction_records * 1.0, 30)
+distraction_penalty = min(
+    distraction_records * 1.0,
+    30
+)
 
 score -= switch_penalty
 score -= idle_penalty
 score -= distraction_penalty
 
-score = max(0, min(100, round(score)))
+score = max(
+    0,
+    min(100, round(score))
+)
 
 
 # ============================================================
@@ -185,12 +216,13 @@ top_app = (
 
 
 # ============================================================
-# METRICS
+# FOCUS OVERVIEW
 # ============================================================
 
 st.subheader("📊 Focus Overview")
 
 col1, col2, col3, col4 = st.columns(4)
+
 
 with col1:
 
@@ -199,6 +231,7 @@ with col1:
         f"{score}/100"
     )
 
+
 with col2:
 
     st.metric(
@@ -206,12 +239,14 @@ with col2:
         focus_level
     )
 
+
 with col3:
 
     st.metric(
         "App Switches",
         app_switches
     )
+
 
 with col4:
 
@@ -225,12 +260,95 @@ st.divider()
 
 
 # ============================================================
-# STATUS
+# CURRENT ANALYSIS
 # ============================================================
 
 st.subheader("🧠 Current Analysis")
 
 st.info(status)
+
+
+# ============================================================
+# AI FOCUS REASON ANALYSIS
+# ============================================================
+
+st.subheader("❓ Why Did You Lose Focus?")
+
+
+focus_analysis = detect_focus_reasons()
+
+
+if focus_analysis:
+
+    # --------------------------------------------------------
+    # MAIN REASON
+    # --------------------------------------------------------
+
+    st.error(
+        f"🔴 Main Reason: "
+        f"{focus_analysis.get('main_reason', 'Unknown')}"
+    )
+
+
+    # --------------------------------------------------------
+    # POSSIBLE REASONS
+    # --------------------------------------------------------
+
+    st.write("### 🧠 Possible Reasons")
+
+    reasons = focus_analysis.get(
+        "reasons",
+        []
+    )
+
+
+    for i, reason in enumerate(
+        reasons,
+        1
+    ):
+
+        st.write(
+            f"**{i}.** {reason}"
+        )
+
+
+    # --------------------------------------------------------
+    # ACTIVITY EVIDENCE
+    # --------------------------------------------------------
+
+    st.write("### 📊 Activity Evidence")
+
+    reason_col1, reason_col2, reason_col3 = st.columns(3)
+
+
+    with reason_col1:
+
+        st.metric(
+            "App Switches",
+            focus_analysis.get(
+                "app_switches",
+                0
+            )
+        )
+
+
+    with reason_col2:
+
+        st.metric(
+            "Idle Time",
+            f"{focus_analysis.get('total_idle', 0)} sec"
+        )
+
+
+    with reason_col3:
+
+        st.metric(
+            "Most Used App",
+            focus_analysis.get(
+                "most_used_app",
+                "Unknown"
+            )
+        )
 
 
 # ============================================================
@@ -266,10 +384,15 @@ with right:
     st.subheader("⏱️ Idle Time")
 
     idle_chart = df[
-        ["timestamp", "idle_seconds"]
+        [
+            "timestamp",
+            "idle_seconds"
+        ]
     ].copy()
 
-    idle_chart = idle_chart.set_index("timestamp")
+    idle_chart = idle_chart.set_index(
+        "timestamp"
+    )
 
     st.line_chart(
         idle_chart["idle_seconds"]
@@ -284,7 +407,9 @@ st.divider()
 
 st.subheader("🚨 Distraction Analysis")
 
+
 col1, col2, col3 = st.columns(3)
+
 
 with col1:
 
@@ -293,12 +418,14 @@ with col1:
         distraction_records
     )
 
+
 with col2:
 
     st.metric(
         "Unique Applications",
         unique_apps
     )
+
 
 with col3:
 
@@ -309,85 +436,54 @@ with col3:
 
 
 # ============================================================
-# FOCUS REASONS
+# RECOMMENDATIONS
 # ============================================================
 
 st.divider()
-
-st.subheader("❓ Why Did You Lose Focus?")
-
-
-reasons = []
-
-if app_switches >= 20:
-
-    reasons.append(
-        f"Frequent application switching detected ({app_switches} switches)."
-    )
-
-if total_idle >= 300:
-
-    reasons.append(
-        f"High idle time detected ({total_idle:.1f} seconds)."
-    )
-
-if distraction_records >= 10:
-
-    reasons.append(
-        f"Frequent distraction-app usage detected ({distraction_records} records)."
-    )
-
-if not reasons:
-
-    reasons.append(
-        "No major distraction pattern detected."
-    )
-
-
-for i, reason in enumerate(reasons, 1):
-
-    st.write(
-        f"**{i}.** {reason}"
-    )
-
-
-# ============================================================
-# RECOMMENDATIONS
-# ============================================================
 
 st.subheader("💡 Personalized Recommendations")
 
 
 recommendations = []
 
+
 if app_switches >= 20:
 
     recommendations.append(
-        "Try staying in one application for at least 25 minutes."
+        "Try staying in one application "
+        "for at least 25 minutes."
     )
+
 
 if total_idle >= 300:
 
     recommendations.append(
-        "Use a 25-minute focused work session with fewer idle periods."
+        "Use a 25-minute focused work session "
+        "with fewer idle periods."
     )
+
 
 if distraction_records >= 10:
 
     recommendations.append(
-        "Close distracting applications during study/work."
+        "Close distracting applications "
+        "during study/work."
     )
+
 
 if score >= 80:
 
     recommendations.append(
-        "Great focus! Try maintaining the same work pattern."
+        "Great focus! Try maintaining "
+        "the same work pattern."
     )
+
 
 if not recommendations:
 
     recommendations.append(
-        "Keep monitoring your activity to discover more patterns."
+        "Keep monitoring your activity "
+        "to discover more patterns."
     )
 
 
@@ -399,7 +495,7 @@ for recommendation in recommendations:
 
 
 # ============================================================
-# TOP APPLICATION
+# MOST USED APPLICATION
 # ============================================================
 
 st.divider()
@@ -424,10 +520,11 @@ with st.expander("🔍 View Activity Data"):
 
 
 # ============================================================
-# REFRESH
+# MANUAL REFRESH
 # ============================================================
 
 st.divider()
+
 
 if st.button("🔄 Refresh Dashboard"):
 
@@ -435,6 +532,10 @@ if st.button("🔄 Refresh Dashboard"):
 
     st.rerun()
 
+
+# ============================================================
+# FOOTER
+# ============================================================
 
 st.caption(
     "Why Did You Lose Focus? — AI Focus Analytics System"
