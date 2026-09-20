@@ -1,40 +1,125 @@
-from recommendations import generate_recommendations
-from feature_engineering import create_features
-from predict_focus import predict_focus
-from focus_score import calculate_focus_score
-from focus_reason import detect_focus_reasons
+import subprocess
+import sys
+import time
+from pathlib import Path
 
 
-def run_full_analysis():
+# ==========================================
+# PROJECT CONFIGURATION
+# ==========================================
 
-    print("\n" + "=" * 55)
-    print("        WHY DID YOU LOSE FOCUS? - AI")
-    print("=" * 55)
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-    # 1. Feature Engineering
-    print("\n[1] Creating features...")
-    create_features()
+ACTIVITY_TRACKER = BASE_DIR / "src" / "activity_tracker.py"
+DASHBOARD = BASE_DIR / "src" / "dashboard.py"
 
-    # 2. ML Prediction
-    print("\n[2] AI Focus Prediction...")
-    predict_focus()
 
-    # 3. Focus Score
-    print("\n[3] Focus Score...")
-    calculate_focus_score()
+# ==========================================
+# START ACTIVITY TRACKER
+# ==========================================
 
-    # 4. Focus Reasons
-    print("\n[4] Focus Reasons...")
-    detect_focus_reasons()
+def start_activity_tracker():
 
-    # 5. Personalized Recommendations
-    print("\n[5] Personalized Recommendations...")
-    generate_recommendations()
+    print("=" * 60)
+    print("STARTING ACTIVITY TRACKER")
+    print("=" * 60)
 
-    print("\n" + "=" * 55)
-    print("              ANALYSIS COMPLETE")
-    print("=" * 55)
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(ACTIVITY_TRACKER)
+        ],
+        cwd=BASE_DIR
+    )
 
+    return process
+
+
+# ==========================================
+# START STREAMLIT DASHBOARD
+# ==========================================
+
+def start_dashboard():
+
+    print("=" * 60)
+    print("STARTING STREAMLIT DASHBOARD")
+    print("=" * 60)
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            str(DASHBOARD)
+        ],
+        cwd=BASE_DIR
+    )
+
+    return process
+
+
+# ==========================================
+# MAIN CONTROLLER
+# ==========================================
+
+def main():
+
+    print("\n" + "=" * 60)
+    print("       WHY DID YOU LOSE FOCUS?")
+    print("       AI FOCUS & PRODUCTIVITY SYSTEM")
+    print("=" * 60)
+
+    print("\nStarting project components...\n")
+
+    tracker_process = None
+    dashboard_process = None
+
+    try:
+
+        # Start activity tracking
+        tracker_process = start_activity_tracker()
+
+        # Give tracker a moment to initialize
+        time.sleep(2)
+
+        # Start dashboard
+        dashboard_process = start_dashboard()
+
+        print("\n" + "=" * 60)
+        print("PROJECT RUNNING")
+        print("=" * 60)
+
+        print("\nActivity Tracker : RUNNING")
+        print("Dashboard        : RUNNING")
+
+        print("\nOpen the Streamlit URL shown above.")
+        print("Press Ctrl+C to stop the project.")
+
+        # Keep main process alive
+        while True:
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+
+        print("\n\nStopping project...")
+
+    finally:
+
+        if tracker_process is not None:
+            tracker_process.terminate()
+
+        if dashboard_process is not None:
+            dashboard_process.terminate()
+
+        print("Activity Tracker stopped.")
+        print("Dashboard stopped.")
+        print("\nProject closed.")
+
+
+# ==========================================
+# PROGRAM ENTRY
+# ==========================================
 
 if __name__ == "__main__":
-    run_full_analysis()
+    main()

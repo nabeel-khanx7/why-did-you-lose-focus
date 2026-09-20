@@ -2,7 +2,7 @@ from streamlit_autorefresh import st_autorefresh
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-
+from recommendations import generate_recommendations
 from focus_reason import detect_focus_reasons
 from predict_focus import predict_focus
 from focus_score import calculate_focus_score
@@ -423,59 +423,161 @@ st.divider()
 # AI FOCUS PREDICTION
 # ============================================================
 
+# ==========================================
+# WHY DID YOU LOSE FOCUS?
+# ==========================================
+
 st.divider()
 
-st.subheader("🤖 AI Focus Prediction")
+st.subheader("🧠 Why Did You Lose Focus?")
 
-if ml_status == "FOCUSED":
+# Detect focus reasons
+reason_data = detect_focus_reasons()
+
+main_reason = reason_data.get(
+    "main_reason",
+    "No major distraction detected"
+)
+
+reasons = reason_data.get(
+    "reasons",
+    []
+)
+
+# Main reason
+if main_reason == "No major distraction detected":
 
     st.success(
-        f"🟢 AI Prediction: {ml_status}"
-    )
-
-elif ml_status == "DISTRACTED":
-
-    st.error(
-        f"🔴 AI Prediction: {ml_status}"
+        "🟢 No major distraction detected"
     )
 
 else:
 
-    st.warning(
-        f"⚠️ AI Prediction: {ml_status}"
+    st.error(
+        f"🔴 Main Reason: {main_reason}"
     )
 
+# Possible reasons
+if reasons:
 
-col1, col2, col3, col4 = st.columns(4)
+    st.markdown("### 📋 Possible Reasons")
 
-with col1:
+    for reason in reasons:
+
+        st.write(
+            f"• {reason}"
+        )
+
+# Activity summary
+st.markdown("### 📊 Activity Summary")
+
+reason_col1, reason_col2, reason_col3, reason_col4 = st.columns(4)
+
+with reason_col1:
 
     st.metric(
-        "AI Prediction",
-        ml_status
+        "App Switches",
+        reason_data.get("app_switches", 0)
     )
 
-with col2:
+with reason_col2:
 
     st.metric(
-        "Confidence",
-        f"{ml_confidence:.1%}"
+        "Total Idle",
+        f"{reason_data.get('total_idle', 0):.1f}s"
     )
 
-with col3:
+with reason_col3:
 
     st.metric(
-        "Latest Idle",
-        f"{ml_result['idle_seconds']:.2f}s"
+        "High Idle Records",
+        reason_data.get("high_idle_records", 0)
     )
 
-with col4:
+with reason_col4:
 
     st.metric(
-        "Latest Distraction",
-        ml_result["distraction"]
+        "Distraction Records",
+        reason_data.get("distraction_records", 0)
     )
 
+st.caption(
+    f"Most used application: "
+    f"{reason_data.get('most_used_app', 'None')}"
+)
+# ==========================================
+# PERSONALIZED FOCUS RECOMMENDATIONS
+# ==========================================
+
+st.divider()
+
+st.subheader("💡 Personalized Focus Recommendations")
+
+recommendation_data = generate_recommendations()
+
+recommendations = recommendation_data
+
+if recommendations:
+
+    for recommendation in recommendations:
+
+        rec_type = recommendation.get(
+            "type",
+            "info"
+        )
+
+        title = recommendation.get(
+            "title",
+            "Focus Recommendation"
+        )
+
+        message = recommendation.get(
+            "message",
+            ""
+        )
+
+        tip = recommendation.get(
+            "tip",
+            ""
+        )
+
+        if rec_type == "warning":
+
+            st.warning(
+                f"⚠️ **{title}**\n\n"
+                f"{message}\n\n"
+                f"💡 **Tip:** {tip}"
+            )
+
+        elif rec_type == "success":
+
+            st.success(
+                f"✅ **{title}**\n\n"
+                f"{message}\n\n"
+                f"💡 **Tip:** {tip}"
+            )
+
+        elif rec_type == "error":
+
+            st.error(
+                f"❌ **{title}**\n\n"
+                f"{message}\n\n"
+                f"💡 **Tip:** {tip}"
+            )
+
+        else:
+
+            st.info(
+                f"ℹ️ **{title}**\n\n"
+                f"{message}\n\n"
+                f"💡 **Tip:** {tip}"
+            )
+
+else:
+
+    st.info(
+        "No personalized recommendations available."
+    )
 # ============================================================
 # FOCUS SESSION OVERVIEW
 # ============================================================
@@ -776,35 +878,6 @@ for i, reason in enumerate(reasons, 1):
 # ============================================================
 # RECOMMENDATIONS
 # ============================================================
-
-st.divider()
-st.subheader("💡 Personalized Recommendations")
-
-recommendations = []
-
-if switch_rate >= 0.10:
-    recommendations.append("Try staying in one application for at least 25 minutes before switching.")
-
-if high_idle_rate >= 0.10:
-    recommendations.append("Use a 25-minute focused work session and reduce idle periods.")
-
-if distraction_rate >= 0.10:
-    recommendations.append("Close or mute distracting applications during study/work.")
-
-if longest_focus_minutes < 25:
-    recommendations.append("Try building a longer uninterrupted focus session.")
-
-if ml_status == "DISTRACTED":
-    recommendations.append("Your latest activity is being classified as distracted; return to your primary task before switching applications.")
-
-if score >= 80:
-    recommendations.append("Great focus! Try maintaining the same work pattern.")
-
-if not recommendations:
-    recommendations.append("Keep monitoring your activity to discover more patterns.")
-
-for recommendation in recommendations:
-    st.write(f"💡 {recommendation}")
 
 # ============================================================
 # MOST USED APPLICATION
