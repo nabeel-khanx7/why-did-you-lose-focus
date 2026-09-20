@@ -1,5 +1,99 @@
 import pandas as pd
 
+def get_focus_session_stats(df):
+
+    if df.empty:
+        return {
+            "sessions": 0,
+            "total_minutes": 0,
+            "longest_minutes": 0
+        }
+
+    df = df.copy()
+
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"],
+        errors="coerce"
+    )
+
+    df["idle_seconds"] = pd.to_numeric(
+        df["idle_seconds"],
+        errors="coerce"
+    ).fillna(0)
+
+    df = df.dropna(subset=["timestamp"])
+
+    df = df.sort_values("timestamp").reset_index(drop=True)
+
+    df["time_gap"] = (
+        df["timestamp"]
+        .diff()
+        .dt.total_seconds()
+        .fillna(0)
+    )
+
+    df["focused"] = (
+        (df["idle_seconds"] < 5) &
+        (df["time_gap"] <= 10) &
+        (
+            df["active_app"]
+            == df["active_app"].shift()
+        )
+    )
+
+    sessions = []
+
+    session_start = None
+
+    for i, row in df.iterrows():
+
+        if row["focused"]:
+
+            if session_start is None:
+                session_start = row["timestamp"]
+
+        else:
+
+            if session_start is not None:
+
+                session_end = df.loc[
+                    i - 1,
+                    "timestamp"
+                ]
+
+                duration = (
+                    session_end - session_start
+                ).total_seconds()
+
+                if duration >= 60:
+                    sessions.append(duration)
+
+                session_start = None
+
+    # Final session
+    if session_start is not None:
+
+        session_end = df.iloc[-1]["timestamp"]
+
+        duration = (
+            session_end - session_start
+        ).total_seconds()
+
+        if duration >= 60:
+            sessions.append(duration)
+
+    if not sessions:
+        return {
+            "sessions": 0,
+            "total_minutes": 0,
+            "longest_minutes": 0
+        }
+
+    return {
+        "sessions": len(sessions),
+        "total_minutes": sum(sessions) / 60,
+        "longest_minutes": max(sessions) / 60
+    }
 
 def detect_focus_sessions():
 

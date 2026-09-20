@@ -2,8 +2,6 @@ from streamlit_autorefresh import st_autorefresh
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-from focus_reason import detect_focus_reasons
-
 
 # ============================================================
 # CONFIG
@@ -15,7 +13,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Refresh dashboard every 5 seconds
 st_autorefresh(
     interval=5000,
     key="focus_dashboard_refresh"
@@ -39,19 +36,34 @@ def load_data():
     if df.empty:
         return df
 
+    # Timestamp
     df["timestamp"] = pd.to_datetime(
         df["timestamp"],
         errors="coerce"
     )
 
+    # Idle seconds
     df["idle_seconds"] = pd.to_numeric(
         df["idle_seconds"],
         errors="coerce"
     ).fillna(0)
 
-    df["active_app"] = df["active_app"].fillna("Unknown")
+    # Active app
+    df["active_app"] = (
+        df["active_app"]
+        .fillna("Unknown")
+        .astype(str)
+    )
 
-    df = df.dropna(subset=["timestamp"])
+    # Remove invalid timestamps
+    df = df.dropna(
+        subset=["timestamp"]
+    )
+
+    # Sort by time
+    df = df.sort_values(
+        "timestamp"
+    ).reset_index(drop=True)
 
     return df
 
@@ -64,11 +76,14 @@ df = load_data()
 # ============================================================
 
 st.title("🎯 Why Did You Lose Focus?")
-st.caption("AI-powered Focus & Productivity Analytics")
+
+st.caption(
+    "AI-powered Focus & Productivity Analytics"
+)
 
 
 # ============================================================
-# NO DATA CHECK
+# CHECK DATA
 # ============================================================
 
 if df.empty:
@@ -87,11 +102,17 @@ if df.empty:
 
 total_records = len(df)
 
-unique_apps = df["active_app"].nunique()
+unique_apps = df[
+    "active_app"
+].nunique()
 
-total_idle = df["idle_seconds"].sum()
+total_idle = df[
+    "idle_seconds"
+].sum()
 
-average_idle = df["idle_seconds"].mean()
+average_idle = df[
+    "idle_seconds"
+].mean()
 
 
 # ============================================================
@@ -100,19 +121,25 @@ average_idle = df["idle_seconds"].mean()
 
 app_switches = (
     df["active_app"]
-    .ne(df["active_app"].shift())
-    .sum() - 1
+    .ne(
+        df["active_app"].shift()
+    )
+    .sum()
+    - 1
 )
 
-if app_switches < 0:
-    app_switches = 0
+app_switches = max(
+    int(app_switches),
+    0
+)
 
 
 # ============================================================
-# DISTRACTION APPS
+# DISTRACTION DETECTION
 # ============================================================
 
 distraction_keywords = [
+
     "youtube",
     "instagram",
     "facebook",
@@ -128,7 +155,9 @@ distraction_keywords = [
 
 def is_distraction(app):
 
-    app_lower = str(app).lower()
+    app_lower = str(
+        app
+    ).lower()
 
     return any(
         keyword in app_lower
@@ -136,8 +165,9 @@ def is_distraction(app):
     )
 
 
-df["distraction"] = df["active_app"].apply(
-    is_distraction
+df["distraction"] = (
+    df["active_app"]
+    .apply(is_distraction)
 )
 
 distraction_records = int(
@@ -151,11 +181,13 @@ distraction_records = int(
 
 score = 100
 
+
 # Application switching penalty
 switch_penalty = min(
     app_switches * 1.5,
     30
 )
+
 
 # Idle penalty
 idle_penalty = min(
@@ -163,19 +195,25 @@ idle_penalty = min(
     30
 )
 
+
 # Distraction penalty
 distraction_penalty = min(
     distraction_records * 1.0,
     30
 )
 
+
 score -= switch_penalty
 score -= idle_penalty
 score -= distraction_penalty
 
+
 score = max(
     0,
-    min(100, round(score))
+    min(
+        100,
+        round(score)
+    )
 )
 
 
@@ -216,12 +254,155 @@ top_app = (
 
 
 # ============================================================
+# FOCUS SESSION DETECTION
+# ============================================================
+
+session_df = df.copy()
+
+
+# Time gap between records
+session_df["time_gap"] = (
+    session_df["timestamp"]
+    .diff()
+    .dt.total_seconds()
+    .fillna(0)
+)
+
+
+# Focus conditions:
+#
+# 1. Idle time < 5 seconds
+# 2. Time gap <= 10 seconds
+# 3. Same application is active
+#
+
+session_df["focused"] = (
+
+    (session_df["idle_seconds"] < 5)
+
+    &
+
+    (session_df["time_gap"] <= 10)
+
+    &
+
+    (
+        session_df["active_app"]
+        ==
+        session_df["active_app"].shift()
+    )
+)
+
+
+# ============================================================
+# BUILD FOCUS SESSIONS
+# ============================================================
+
+sessions = []
+
+session_start = None
+
+
+for i, row in session_df.iterrows():
+
+    if row["focused"]:
+
+        if session_start is None:
+
+            session_start = row[
+                "timestamp"
+            ]
+
+    else:
+
+        if session_start is not None:
+
+            previous_index = i - 1
+
+            session_end = (
+                session_df
+                .loc[
+                    previous_index,
+                    "timestamp"
+                ]
+            )
+
+            duration = (
+                session_end
+                - session_start
+            ).total_seconds()
+
+            # Only count sessions >= 1 minute
+            if duration >= 60:
+
+                sessions.append(
+                    duration
+                )
+
+            session_start = None
+
+
+# ============================================================
+# FINAL SESSION
+# ============================================================
+
+if session_start is not None:
+
+    session_end = (
+        session_df
+        .iloc[-1]["timestamp"]
+    )
+
+    duration = (
+        session_end
+        - session_start
+    ).total_seconds()
+
+    if duration >= 60:
+
+        sessions.append(
+            duration
+        )
+
+
+# ============================================================
+# SESSION STATISTICS
+# ============================================================
+
+focus_sessions = len(
+    sessions
+)
+
+
+if sessions:
+
+    total_focus_minutes = (
+        sum(sessions) / 60
+    )
+
+    longest_focus_minutes = (
+        max(sessions) / 60
+    )
+
+else:
+
+    total_focus_minutes = 0
+
+    longest_focus_minutes = 0
+
+
+# ============================================================
 # FOCUS OVERVIEW
 # ============================================================
 
-st.subheader("📊 Focus Overview")
+st.subheader(
+    "📊 Focus Overview"
+)
 
-col1, col2, col3, col4 = st.columns(4)
+
+col1, col2, col3, col4 = (
+    st.columns(4)
+)
 
 
 with col1:
@@ -263,91 +444,163 @@ st.divider()
 # CURRENT ANALYSIS
 # ============================================================
 
-st.subheader("🧠 Current Analysis")
+st.subheader(
+    "🧠 Current Analysis"
+)
 
 st.info(status)
 
 
 # ============================================================
-# AI FOCUS REASON ANALYSIS
+# FOCUS SESSION OVERVIEW
 # ============================================================
 
-st.subheader("❓ Why Did You Lose Focus?")
+st.divider()
+
+st.subheader(
+    "🎯 Focus Session Analysis"
+)
 
 
-focus_analysis = detect_focus_reasons()
+session_col1, session_col2, session_col3 = (
+    st.columns(3)
+)
 
 
-if focus_analysis:
+with session_col1:
 
-    # --------------------------------------------------------
-    # MAIN REASON
-    # --------------------------------------------------------
-
-    st.error(
-        f"🔴 Main Reason: "
-        f"{focus_analysis.get('main_reason', 'Unknown')}"
+    st.metric(
+        "Focus Sessions",
+        focus_sessions
     )
 
 
-    # --------------------------------------------------------
-    # POSSIBLE REASONS
-    # --------------------------------------------------------
+with session_col2:
 
-    st.write("### 🧠 Possible Reasons")
-
-    reasons = focus_analysis.get(
-        "reasons",
-        []
+    st.metric(
+        "Total Focus Time",
+        f"{total_focus_minutes:.2f} min"
     )
 
 
-    for i, reason in enumerate(
-        reasons,
-        1
-    ):
+with session_col3:
 
-        st.write(
-            f"**{i}.** {reason}"
+    st.metric(
+        "Longest Session",
+        f"{longest_focus_minutes:.2f} min"
+    )
+
+
+# ============================================================
+# SESSION LIST
+# ============================================================
+
+if sessions:
+
+    st.write(
+        "### 📋 Detected Focus Sessions"
+    )
+
+    session_rows = []
+
+    current_session_start = None
+
+
+    for i, row in session_df.iterrows():
+
+        if row["focused"]:
+
+            if current_session_start is None:
+
+                current_session_start = (
+                    row["timestamp"]
+                )
+
+        else:
+
+            if current_session_start is not None:
+
+                session_end = (
+                    session_df
+                    .loc[
+                        i - 1,
+                        "timestamp"
+                    ]
+                )
+
+                duration = (
+                    session_end
+                    - current_session_start
+                ).total_seconds()
+
+
+                if duration >= 60:
+
+                    session_rows.append({
+
+                        "Start":
+                            current_session_start.strftime(
+                                "%H:%M:%S"
+                            ),
+
+                        "End":
+                            session_end.strftime(
+                                "%H:%M:%S"
+                            ),
+
+                        "Duration":
+                            f"{duration / 60:.2f} min"
+
+                    })
+
+
+                current_session_start = None
+
+
+    # Final session
+    if current_session_start is not None:
+
+        session_end = (
+            session_df
+            .iloc[-1]["timestamp"]
         )
 
-
-    # --------------------------------------------------------
-    # ACTIVITY EVIDENCE
-    # --------------------------------------------------------
-
-    st.write("### 📊 Activity Evidence")
-
-    reason_col1, reason_col2, reason_col3 = st.columns(3)
+        duration = (
+            session_end
+            - current_session_start
+        ).total_seconds()
 
 
-    with reason_col1:
+        if duration >= 60:
 
-        st.metric(
-            "App Switches",
-            focus_analysis.get(
-                "app_switches",
-                0
-            )
+            session_rows.append({
+
+                "Start":
+                    current_session_start.strftime(
+                        "%H:%M:%S"
+                    ),
+
+                "End":
+                    session_end.strftime(
+                        "%H:%M:%S"
+                    ),
+
+                "Duration":
+                    f"{duration / 60:.2f} min"
+
+            })
+
+
+    if session_rows:
+
+        session_table = pd.DataFrame(
+            session_rows
         )
 
-
-    with reason_col2:
-
-        st.metric(
-            "Idle Time",
-            f"{focus_analysis.get('total_idle', 0)} sec"
-        )
-
-
-    with reason_col3:
-
-        st.metric(
-            "Most Used App",
-            focus_analysis.get(
-                "most_used_app",
-                "Unknown"
-            )
+        st.dataframe(
+            session_table,
+            use_container_width=True,
+            hide_index=True
         )
 
 
@@ -364,7 +617,9 @@ left, right = st.columns(2)
 
 with left:
 
-    st.subheader("💻 Application Usage")
+    st.subheader(
+        "💻 Application Usage"
+    )
 
     app_usage = (
         df["active_app"]
@@ -372,7 +627,9 @@ with left:
         .head(10)
     )
 
-    st.bar_chart(app_usage)
+    st.bar_chart(
+        app_usage
+    )
 
 
 # ============================================================
@@ -381,7 +638,9 @@ with left:
 
 with right:
 
-    st.subheader("⏱️ Idle Time")
+    st.subheader(
+        "⏱️ Idle Time"
+    )
 
     idle_chart = df[
         [
@@ -390,12 +649,15 @@ with right:
         ]
     ].copy()
 
-    idle_chart = idle_chart.set_index(
-        "timestamp"
+    idle_chart = (
+        idle_chart
+        .set_index("timestamp")
     )
 
     st.line_chart(
-        idle_chart["idle_seconds"]
+        idle_chart[
+            "idle_seconds"
+        ]
     )
 
 
@@ -405,10 +667,14 @@ with right:
 
 st.divider()
 
-st.subheader("🚨 Distraction Analysis")
+st.subheader(
+    "🚨 Distraction Analysis"
+)
 
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3 = (
+    st.columns(3)
+)
 
 
 with col1:
@@ -436,12 +702,105 @@ with col3:
 
 
 # ============================================================
+# WHY DID YOU LOSE FOCUS?
+# ============================================================
+
+st.divider()
+
+st.subheader(
+    "❓ Why Did You Lose Focus?"
+)
+
+
+reasons = []
+
+
+if app_switches >= 20:
+
+    reasons.append(
+        f"Frequent application switching detected "
+        f"({app_switches} switches)."
+    )
+
+
+if total_idle >= 300:
+
+    reasons.append(
+        f"High idle time detected "
+        f"({total_idle:.1f} seconds)."
+    )
+
+
+if distraction_records >= 10:
+
+    reasons.append(
+        f"Frequent distraction-app usage detected "
+        f"({distraction_records} records)."
+    )
+
+
+if not reasons:
+
+    reasons.append(
+        "No major distraction pattern detected."
+    )
+
+
+# Main reason
+if app_switches >= 20:
+
+    main_reason = (
+        "Frequent application switching"
+    )
+
+elif total_idle >= 300:
+
+    main_reason = (
+        "High idle time"
+    )
+
+elif distraction_records >= 10:
+
+    main_reason = (
+        "Distraction application usage"
+    )
+
+else:
+
+    main_reason = (
+        "No major distraction detected"
+    )
+
+
+st.error(
+    f"🔴 Main Reason: {main_reason}"
+)
+
+
+st.write(
+    "### 🧠 Possible Reasons"
+)
+
+
+for i, reason in enumerate(
+    reasons,
+    1
+):
+
+    st.write(
+        f"**{i}.** {reason}"
+    )
+
+
+# ============================================================
 # RECOMMENDATIONS
 # ============================================================
 
 st.divider()
 
-st.subheader("💡 Personalized Recommendations")
+st.subheader(
+    "💡 Personalized Recommendations"
+)
 
 
 recommendations = []
@@ -468,6 +827,14 @@ if distraction_records >= 10:
     recommendations.append(
         "Close distracting applications "
         "during study/work."
+    )
+
+
+if longest_focus_minutes < 25:
+
+    recommendations.append(
+        "Try building a longer uninterrupted "
+        "focus session."
     )
 
 
@@ -500,18 +867,23 @@ for recommendation in recommendations:
 
 st.divider()
 
-st.subheader("🏆 Most Used Application")
+st.subheader(
+    "🏆 Most Used Application"
+)
+
 
 st.success(
-    f"{top_app}"
+    f"💻 {top_app}"
 )
 
 
 # ============================================================
-# RAW DATA
+# RAW ACTIVITY DATA
 # ============================================================
 
-with st.expander("🔍 View Activity Data"):
+with st.expander(
+    "🔍 View Activity Data"
+):
 
     st.dataframe(
         df.tail(100),
@@ -526,7 +898,9 @@ with st.expander("🔍 View Activity Data"):
 st.divider()
 
 
-if st.button("🔄 Refresh Dashboard"):
+if st.button(
+    "🔄 Refresh Dashboard"
+):
 
     st.cache_data.clear()
 
@@ -538,5 +912,6 @@ if st.button("🔄 Refresh Dashboard"):
 # ============================================================
 
 st.caption(
-    "Why Did You Lose Focus? — AI Focus Analytics System"
+    "Why Did You Lose Focus? — "
+    "AI Focus Analytics System"
 )
