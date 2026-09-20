@@ -726,7 +726,7 @@ if sessions:
 
         st.dataframe(
             session_table,
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
 
@@ -905,7 +905,7 @@ with st.expander(
 
     st.dataframe(
         df.tail(100),
-        use_container_width=True
+        width="stretch"
     )
 
 
