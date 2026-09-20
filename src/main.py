@@ -1,25 +1,39 @@
-from analyze_activity import analyze_activity
+from recommendations import generate_recommendations
+from feature_engineering import create_features
+from predict_focus import predict_focus
 from focus_score import calculate_focus_score
 from focus_reason import detect_focus_reasons
 
 
 def run_full_analysis():
-    print("\n" + "=" * 50)
-    print("       WHY DID YOU LOSE FOCUS? AI")
-    print("=" * 50)
 
-    print("\n[1] Activity Analysis")
-    analyze_activity()
+    print("\n" + "=" * 55)
+    print("        WHY DID YOU LOSE FOCUS? - AI")
+    print("=" * 55)
 
-    print("\n[2] Focus Score")
+    # 1. Feature Engineering
+    print("\n[1] Creating features...")
+    create_features()
+
+    # 2. ML Prediction
+    print("\n[2] AI Focus Prediction...")
+    predict_focus()
+
+    # 3. Focus Score
+    print("\n[3] Focus Score...")
     calculate_focus_score()
 
-    print("\n[3] Focus Reasons")
+    # 4. Focus Reasons
+    print("\n[4] Focus Reasons...")
     detect_focus_reasons()
 
-    print("\n" + "=" * 50)
-    print("          ANALYSIS COMPLETE")
-    print("=" * 50)
+    # 5. Personalized Recommendations
+    print("\n[5] Personalized Recommendations...")
+    generate_recommendations()
+
+    print("\n" + "=" * 55)
+    print("              ANALYSIS COMPLETE")
+    print("=" * 55)
 
 
 if __name__ == "__main__":
