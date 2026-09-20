@@ -266,10 +266,9 @@ It includes:
 
 ### Dashboard Screenshot
 
-_Add dashboard screenshots here._
+### Dashboard Screenshot
 
----
-
+![Why Did You Lose Focus AI Dashboard](screenshots/dashboard_preview.png)
 ## 🧠 How the AI Works
 
 The system follows a multi-stage pipeline:
