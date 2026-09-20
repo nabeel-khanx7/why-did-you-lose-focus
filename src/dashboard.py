@@ -1,7 +1,7 @@
+from streamlit_autorefresh import st_autorefresh
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-
 
 # ============================================================
 # CONFIG
@@ -12,6 +12,7 @@ st.set_page_config(
     page_icon="🎯",
     layout="wide"
 )
+st_autorefresh(interval=5000, key="focus_dashboard_refresh")
 
 DATA_FILE = Path("data/activity_log.csv")
 
@@ -20,7 +21,7 @@ DATA_FILE = Path("data/activity_log.csv")
 # LOAD DATA
 # ============================================================
 
-@st.cache_data
+@st.cache_data(ttl=5)
 def load_data():
 
     if not DATA_FILE.exists():
