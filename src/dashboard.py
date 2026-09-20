@@ -3,6 +3,9 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
+from focus_reason import detect_focus_reasons
+from predict_focus import predict_focus
+from focus_score import calculate_focus_score
 # ============================================================
 # CONFIG
 # ============================================================
@@ -70,6 +73,13 @@ def load_data():
 
 df = load_data()
 
+# ============================================================
+# AI FOCUS PREDICTION
+# ============================================================
+
+ml_result = None
+ml_status = "ERROR"
+ml_confidence = 0.0
 
 # ============================================================
 # HEADER
@@ -179,68 +189,33 @@ distraction_records = int(
 # FOCUS SCORE
 # ============================================================
 
-score = 100
+# Use the shared scoring engine so the dashboard and focus_score.py
+# always calculate the same Focus Score.
+focus_score_result = calculate_focus_score()
 
-
-# Application switching penalty
-switch_penalty = min(
-    app_switches * 1.5,
-    30
-)
-
-
-# Idle penalty
-idle_penalty = min(
-    total_idle / 30,
-    30
-)
-
-
-# Distraction penalty
-distraction_penalty = min(
-    distraction_records * 1.0,
-    30
-)
-
-
-score -= switch_penalty
-score -= idle_penalty
-score -= distraction_penalty
-
-
-score = max(
-    0,
-    min(
-        100,
-        round(score)
-    )
-)
-
-
-# ============================================================
-# FOCUS LEVEL
-# ============================================================
-
-if score >= 80:
-
-    focus_level = "Excellent"
-    status = "🟢 Highly Focused"
-
-elif score >= 60:
-
-    focus_level = "Good"
-    status = "🟢 Focused"
-
-elif score >= 40:
-
-    focus_level = "Average"
-    status = "🟡 Moderate Focus"
-
+if focus_score_result:
+    score = focus_score_result["focus_score"]
+    focus_level = focus_score_result["focus_level"]
 else:
+    score = 0
+    focus_level = "Unknown"
 
-    focus_level = "Poor"
-    status = "🔴 Distracted"
+# Run the ML model once and expose a safe fallback.
+ml_result = predict_focus()
 
+if ml_result is None:
+    ml_result = {
+        "status": "ERROR",
+        "prediction": 0,
+        "confidence": 0.0,
+        "idle_seconds": 0.0,
+        "app_switches": 0,
+        "switch_count": 0,
+        "distraction": 0
+    }
+
+ml_status = ml_result.get("status", "ERROR")
+ml_confidence = ml_result.get("confidence", 0.0)
 
 # ============================================================
 # TOP APPLICATION
@@ -409,7 +384,7 @@ with col1:
 
     st.metric(
         "Focus Score",
-        f"{score}/100"
+        f"{score:.1f}/100"
     )
 
 
@@ -444,12 +419,62 @@ st.divider()
 # CURRENT ANALYSIS
 # ============================================================
 
-st.subheader(
-    "🧠 Current Analysis"
-)
+# ============================================================
+# AI FOCUS PREDICTION
+# ============================================================
 
-st.info(status)
+st.divider()
 
+st.subheader("🤖 AI Focus Prediction")
+
+if ml_status == "FOCUSED":
+
+    st.success(
+        f"🟢 AI Prediction: {ml_status}"
+    )
+
+elif ml_status == "DISTRACTED":
+
+    st.error(
+        f"🔴 AI Prediction: {ml_status}"
+    )
+
+else:
+
+    st.warning(
+        f"⚠️ AI Prediction: {ml_status}"
+    )
+
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+
+    st.metric(
+        "AI Prediction",
+        ml_status
+    )
+
+with col2:
+
+    st.metric(
+        "Confidence",
+        f"{ml_confidence:.1%}"
+    )
+
+with col3:
+
+    st.metric(
+        "Latest Idle",
+        f"{ml_result['idle_seconds']:.2f}s"
+    )
+
+with col4:
+
+    st.metric(
+        "Latest Distraction",
+        ml_result["distraction"]
+    )
 
 # ============================================================
 # FOCUS SESSION OVERVIEW
@@ -707,159 +732,79 @@ with col3:
 
 st.divider()
 
-st.subheader(
-    "❓ Why Did You Lose Focus?"
-)
+st.subheader("❓ Why Did You Lose Focus?")
 
+switch_rate = focus_score_result.get("switch_rate", 0) if focus_score_result else 0
+high_idle_rate = focus_score_result.get("high_idle_rate", 0) if focus_score_result else 0
+distraction_rate = focus_score_result.get("distraction_rate", 0) if focus_score_result else 0
 
 reasons = []
 
+if switch_rate >= 0.10:
+    reasons.append(f"Frequent application switching detected ({app_switches} switches, {switch_rate:.1%} switch rate).")
 
-if app_switches >= 20:
+if high_idle_rate >= 0.10:
+    reasons.append(f"High idle activity detected ({high_idle_rate:.1%} of records had 5+ seconds idle).")
 
-    reasons.append(
-        f"Frequent application switching detected "
-        f"({app_switches} switches)."
-    )
+if distraction_rate >= 0.10:
+    reasons.append(f"Frequent distraction-app usage detected ({distraction_records} records, {distraction_rate:.1%} of activity).")
 
-
-if total_idle >= 300:
-
-    reasons.append(
-        f"High idle time detected "
-        f"({total_idle:.1f} seconds)."
-    )
-
-
-if distraction_records >= 10:
-
-    reasons.append(
-        f"Frequent distraction-app usage detected "
-        f"({distraction_records} records)."
-    )
-
+if ml_status == "DISTRACTED":
+    reasons.append(f"ML model currently classifies the latest activity as DISTRACTED with {ml_confidence:.1%} confidence.")
 
 if not reasons:
+    reasons.append("No major distraction pattern detected.")
 
-    reasons.append(
-        "No major distraction pattern detected."
-    )
-
-
-# Main reason
-if app_switches >= 20:
-
-    main_reason = (
-        "Frequent application switching"
-    )
-
-elif total_idle >= 300:
-
-    main_reason = (
-        "High idle time"
-    )
-
-elif distraction_records >= 10:
-
-    main_reason = (
-        "Distraction application usage"
-    )
-
+if focus_score_result:
+    penalties = {
+        "Frequent application switching": focus_score_result["switch_penalty"],
+        "High idle time": focus_score_result["idle_penalty"],
+        "Distraction application usage": focus_score_result["distraction_penalty"]
+    }
+    main_reason = max(penalties, key=penalties.get)
+    if max(penalties.values()) <= 0:
+        main_reason = "No major distraction detected"
 else:
+    main_reason = "Unable to calculate reason"
 
-    main_reason = (
-        "No major distraction detected"
-    )
+st.error(f"🔴 Main Reason: {main_reason}")
+st.write("### 🧠 Possible Reasons")
 
-
-st.error(
-    f"🔴 Main Reason: {main_reason}"
-)
-
-
-st.write(
-    "### 🧠 Possible Reasons"
-)
-
-
-for i, reason in enumerate(
-    reasons,
-    1
-):
-
-    st.write(
-        f"**{i}.** {reason}"
-    )
-
+for i, reason in enumerate(reasons, 1):
+    st.write(f"**{i}.** {reason}")
 
 # ============================================================
 # RECOMMENDATIONS
 # ============================================================
 
 st.divider()
-
-st.subheader(
-    "💡 Personalized Recommendations"
-)
-
+st.subheader("💡 Personalized Recommendations")
 
 recommendations = []
 
+if switch_rate >= 0.10:
+    recommendations.append("Try staying in one application for at least 25 minutes before switching.")
 
-if app_switches >= 20:
+if high_idle_rate >= 0.10:
+    recommendations.append("Use a 25-minute focused work session and reduce idle periods.")
 
-    recommendations.append(
-        "Try staying in one application "
-        "for at least 25 minutes."
-    )
-
-
-if total_idle >= 300:
-
-    recommendations.append(
-        "Use a 25-minute focused work session "
-        "with fewer idle periods."
-    )
-
-
-if distraction_records >= 10:
-
-    recommendations.append(
-        "Close distracting applications "
-        "during study/work."
-    )
-
+if distraction_rate >= 0.10:
+    recommendations.append("Close or mute distracting applications during study/work.")
 
 if longest_focus_minutes < 25:
+    recommendations.append("Try building a longer uninterrupted focus session.")
 
-    recommendations.append(
-        "Try building a longer uninterrupted "
-        "focus session."
-    )
-
+if ml_status == "DISTRACTED":
+    recommendations.append("Your latest activity is being classified as distracted; return to your primary task before switching applications.")
 
 if score >= 80:
-
-    recommendations.append(
-        "Great focus! Try maintaining "
-        "the same work pattern."
-    )
-
+    recommendations.append("Great focus! Try maintaining the same work pattern.")
 
 if not recommendations:
-
-    recommendations.append(
-        "Keep monitoring your activity "
-        "to discover more patterns."
-    )
-
+    recommendations.append("Keep monitoring your activity to discover more patterns.")
 
 for recommendation in recommendations:
-
-    st.write(
-        f"💡 {recommendation}"
-    )
-
+    st.write(f"💡 {recommendation}")
 
 # ============================================================
 # MOST USED APPLICATION
