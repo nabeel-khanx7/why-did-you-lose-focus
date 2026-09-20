@@ -430,7 +430,7 @@ the system aims to answer:
 
 ## 👨‍💻 Author
 
-**Nabeel Khan**
+**Nabeel Raza Khan**
 
 AI/ML Engineering Student
 
