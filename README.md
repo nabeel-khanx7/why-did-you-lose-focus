@@ -266,8 +266,6 @@ It includes:
 
 ### Dashboard Screenshot
 
-### Dashboard Screenshot
-
 ![Why Did You Lose Focus AI Dashboard](screenshots/dashboard_preview.png)
 
 The system follows a multi-stage pipeline:
